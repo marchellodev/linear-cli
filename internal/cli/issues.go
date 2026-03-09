@@ -27,6 +27,8 @@ func newIssuesCmd() *cobra.Command {
 		newIssuesCommentCmd(),
 		newIssuesCommentsCmd(),
 		newIssuesReplyCmd(),
+		newIssuesResolveCmd(),
+		newIssuesUnresolveCmd(),
 		newIssuesReactCmd(),
 		newIssuesDependenciesCmd(),
 		newIssuesBlockedByCmd(),
@@ -38,18 +40,18 @@ func newIssuesCmd() *cobra.Command {
 
 func newIssuesListCmd() *cobra.Command {
 	var (
-		teamID     string
-		project    string
-		state      string
-		priority   string
-		assignee   string
-		cycle      string
-		labels     string
+		teamID        string
+		project       string
+		state         string
+		priority      string
+		assignee      string
+		cycle         string
+		labels        string
 		excludeLabels string
-		sortBy     string
-		limit      int
-		formatStr  string
-		outputType string
+		sortBy        string
+		limit         int
+		formatStr     string
+		outputType    string
 	)
 
 	cmd := &cobra.Command{
@@ -222,7 +224,7 @@ Images in the description (uploads.linear.app/...) require auth — use:
 
   # Download a private image from the issue description
   linear attachments download "https://uploads.linear.app/..."`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			issueID := args[0]
 
@@ -440,21 +442,22 @@ TIP: Run 'linear init' first to set default team.`,
 
 func newIssuesUpdateCmd() *cobra.Command {
 	var (
-		team        string
-		title       string
-		description string
-		state       string
-		priority    string
-		estimate    string
-		labels      string
-		cycle       string
-		project     string
-		assignee    string
-		dueDate     string
-		parent      string
-		dependsOn   string
-		blockedBy   string
-		attachFiles []string
+		team         string
+		title        string
+		description  string
+		state        string
+		priority     string
+		estimate     string
+		labels       string
+		removeLabels string
+		cycle        string
+		project      string
+		assignee     string
+		dueDate      string
+		parent       string
+		dependsOn    string
+		blockedBy    string
+		attachFiles  []string
 	)
 
 	cmd := &cobra.Command{
@@ -463,6 +466,9 @@ func newIssuesUpdateCmd() *cobra.Command {
 		Long:  `Update an existing issue. Only provided flags are changed.`,
 		Example: `  # Update state and priority
   linear issues update CEN-123 --state Done --priority 0
+
+  # Remove one or more labels
+  linear issues update CEN-123 --remove-labels bug,customer
 
   # Add attachment to existing issue
   linear issues update CEN-123 --attach /tmp/screenshot.png
@@ -480,7 +486,7 @@ func newIssuesUpdateCmd() *cobra.Command {
 				return err
 			}
 
-// Get team from flag or config (for cycle resolution)
+			// Get team from flag or config (for cycle resolution)
 			if team == "" {
 				team = GetDefaultTeam()
 			}
@@ -488,13 +494,16 @@ func newIssuesUpdateCmd() *cobra.Command {
 
 			// Check if any updates provided (description="-" means stdin)
 			hasFlags := title != "" || description != "" || state != "" ||
-				priority != "" || estimate != "" || labels != "" ||
+				priority != "" || estimate != "" || labels != "" || removeLabels != "" ||
 				cycle != "" || project != "" || assignee != "" ||
 				dueDate != "" || parent != "" || dependsOn != "" || blockedBy != "" ||
 				len(attachFiles) > 0
 
 			if !hasFlags {
 				return fmt.Errorf("no updates specified. Use flags like --state, --priority, etc")
+			}
+			if labels != "" && removeLabels != "" {
+				return fmt.Errorf("cannot use both --labels and --remove-labels in the same command")
 			}
 
 			// Get description from flag or stdin
@@ -540,6 +549,9 @@ func newIssuesUpdateCmd() *cobra.Command {
 			if labels != "" {
 				input.LabelIDs = parseCommaSeparated(labels)
 			}
+			if removeLabels != "" {
+				input.RemoveLabelIDs = parseCommaSeparated(removeLabels)
+			}
 			if cycle != "" {
 				input.CycleID = &cycle
 			}
@@ -584,7 +596,8 @@ func newIssuesUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&state, "state", "s", "", "Update workflow state name (e.g., 'In Progress', 'Backlog')")
 	cmd.Flags().StringVarP(&priority, "priority", "p", "", "Priority: 0-4 or none/urgent/high/normal/low")
 	cmd.Flags().StringVarP(&estimate, "estimate", "e", "", "Update story points estimate")
-	cmd.Flags().StringVarP(&labels, "labels", "l", "", "Update labels (comma-separated)")
+	cmd.Flags().StringVarP(&labels, "labels", "l", "", "Replace labels (comma-separated)")
+	cmd.Flags().StringVar(&removeLabels, "remove-labels", "", "Remove labels from the issue (comma-separated)")
 	cmd.Flags().StringVarP(&cycle, "cycle", "c", "", "Update cycle number or name")
 	cmd.Flags().StringVarP(&project, "project", "P", "", ProjectFlagDescription)
 	cmd.Flags().StringVarP(&assignee, "assignee", "a", "", "Update assignee name or email (use 'me' for yourself)")
@@ -781,6 +794,58 @@ func newIssuesReplyCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&attachFiles, "attach", nil, "Embed file as inline image in body (repeatable); for sidebar cards use: attachments create")
 
 	return cmd
+}
+
+func newIssuesResolveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "resolve <comment-id>",
+		Short: "Resolve a comment thread",
+		Long:  `Resolve a comment thread by comment ID. Use the root comment ID for the thread you want to resolve.`,
+		Example: `  # Resolve a comment thread
+  linear issues resolve abc-comment-id`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			commentID := args[0]
+
+			deps, err := getDeps(cmd)
+			if err != nil {
+				return err
+			}
+
+			if err := deps.Issues.ResolveCommentThread(commentID); err != nil {
+				return fmt.Errorf("failed to resolve comment thread: %w", err)
+			}
+
+			fmt.Printf("Resolved comment thread %s\n", commentID)
+			return nil
+		},
+	}
+}
+
+func newIssuesUnresolveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "unresolve <comment-id>",
+		Short: "Reopen a resolved comment thread",
+		Long:  `Reopen a previously resolved comment thread by comment ID.`,
+		Example: `  # Reopen a comment thread
+  linear issues unresolve abc-comment-id`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			commentID := args[0]
+
+			deps, err := getDeps(cmd)
+			if err != nil {
+				return err
+			}
+
+			if err := deps.Issues.UnresolveCommentThread(commentID); err != nil {
+				return fmt.Errorf("failed to unresolve comment thread: %w", err)
+			}
+
+			fmt.Printf("Reopened comment thread %s\n", commentID)
+			return nil
+		},
+	}
 }
 
 func newIssuesReactCmd() *cobra.Command {

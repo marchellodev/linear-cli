@@ -641,8 +641,8 @@ type UpdateIssueInput struct {
 	ProjectID   *string  `json:"projectId,omitempty"`   // Project ID to move issue to
 	ParentID    *string  `json:"parentId,omitempty"`    // Parent issue ID for sub-issues
 	TeamID      *string  `json:"teamId,omitempty"`      // Team ID to move issue to
-	CycleID     *string  `json:"cycleId,omitempty"`     // Cycle ID to move issue to
-	LabelIDs    []string `json:"labelIds,omitempty"`    // Label IDs to apply
+	CycleID     *string   `json:"cycleId,omitempty"`     // Cycle ID to move issue to
+	LabelIDs    *[]string `json:"labelIds,omitempty"`    // Label IDs to apply (non-nil empty slice clears all labels)
 }
 
 // IssueFilter represents filter options for listing issues

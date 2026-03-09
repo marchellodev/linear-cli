@@ -39,6 +39,12 @@ func (m *mockIssueClientForRelation) GetIssue(identifier string) (*core.Issue, e
 	return &core.Issue{
 		ID:         "issue-uuid-123",
 		Identifier: "TEST-1",
+		Labels: &core.LabelConnection{
+			Nodes: []core.Label{
+				{ID: "label-bug", Name: "bug"},
+				{ID: "label-customer", Name: "customer"},
+			},
+		},
 	}, nil
 }
 
@@ -78,7 +84,16 @@ func (m *mockIssueClientForRelation) ResolveCycleIdentifier(num, team string) (s
 	return "cycle-uuid", nil
 }
 func (m *mockIssueClientForRelation) ResolveLabelIdentifier(label, team string) (string, error) {
-	return "label-uuid", nil
+	switch label {
+	case "bug":
+		return "label-bug", nil
+	case "customer":
+		return "label-customer", nil
+	case "ops":
+		return "label-ops", nil
+	default:
+		return "label-uuid", nil
+	}
 }
 func (m *mockIssueClientForRelation) ResolveProjectIdentifier(nameOrID, teamID string) (string, error) {
 	return "project-uuid", nil
@@ -269,7 +284,59 @@ func TestIssueService_Update_BothDependsOnAndBlockedBy(t *testing.T) {
 	}
 }
 
+func TestIssueService_Update_RemoveLabels_ReplacesWithRemainingLabels(t *testing.T) {
+	mock := &mockIssueClientForRelation{}
+	svc := NewIssueService(mock, format.New())
+
+	_, err := svc.Update("TEST-1", &UpdateIssueInput{
+		RemoveLabelIDs: []string{"bug"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.updateIssueCalls != 1 {
+		t.Fatalf("UpdateIssue called %d times, want 1", mock.updateIssueCalls)
+	}
+	if mock.lastUpdateInput.LabelIDs == nil {
+		t.Fatal("expected LabelIDs to be set")
+	}
+	got := *mock.lastUpdateInput.LabelIDs
+	if len(got) != 1 || got[0] != "label-customer" {
+		t.Fatalf("remaining labels = %#v, want [label-customer]", got)
+	}
+}
+
+func TestIssueService_Update_RemoveLastLabel_ClearsLabels(t *testing.T) {
+	mock := &mockIssueClientForRelation{}
+	svc := NewIssueService(mock, format.New())
+
+	_, err := svc.Update("TEST-1", &UpdateIssueInput{
+		RemoveLabelIDs: []string{"bug", "customer"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.updateIssueCalls != 1 {
+		t.Fatalf("UpdateIssue called %d times, want 1", mock.updateIssueCalls)
+	}
+	if mock.lastUpdateInput.LabelIDs == nil {
+		t.Fatal("expected LabelIDs to be set")
+	}
+	got := *mock.lastUpdateInput.LabelIDs
+	if got == nil {
+		t.Fatal("expected non-nil empty label slice")
+	}
+	if len(got) != 0 {
+		t.Fatalf("remaining labels = %#v, want []", got)
+	}
+}
+
 func TestHasServiceFieldsToUpdate(t *testing.T) {
+	emptyLabels := []string{}
+	labels := []string{"label-1"}
+
 	tests := []struct {
 		name   string
 		input  core.UpdateIssueInput
@@ -291,8 +358,13 @@ func TestHasServiceFieldsToUpdate(t *testing.T) {
 			expect: true,
 		},
 		{
+			name:   "empty labelIDs set",
+			input:  core.UpdateIssueInput{LabelIDs: &emptyLabels},
+			expect: true,
+		},
+		{
 			name:   "labelIDs set",
-			input:  core.UpdateIssueInput{LabelIDs: []string{"label-1"}},
+			input:  core.UpdateIssueInput{LabelIDs: &labels},
 			expect: true,
 		},
 	}

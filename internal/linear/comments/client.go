@@ -1,10 +1,10 @@
 package comments
 
 import (
+	"fmt"
 	"github.com/joa23/linear-cli/internal/linear/core"
 	"github.com/joa23/linear-cli/internal/linear/guidance"
 	"github.com/joa23/linear-cli/internal/linear/validation"
-	"fmt"
 )
 
 // CommentClient handles all comment and reaction operations for the Linear API.
@@ -36,7 +36,7 @@ linear_create_comment(issue.id, "This is my comment")`)
 		return nil, guidance.ValidationErrorWithExample("body", "cannot be empty",
 			`linear_create_comment(issueId, "Progress update: Completed authentication module")`)
 	}
-	
+
 	const mutation = `
 		mutation CreateComment($issueId: String!, $body: String!) {
 			commentCreate(
@@ -64,24 +64,24 @@ linear_create_comment(issue.id, "This is my comment")`)
 			}
 		}
 	`
-	
+
 	variables := map[string]interface{}{
 		"issueId": issueID,
 		"body":    body,
 	}
-	
+
 	var response struct {
 		CommentCreate struct {
-			Success bool    `json:"success"`
+			Success bool         `json:"success"`
 			Comment core.Comment `json:"comment"`
 		} `json:"commentCreate"`
 	}
-	
+
 	err := cc.base.ExecuteRequest(mutation, variables, &response)
 	if err != nil {
 		return nil, guidance.EnhanceGenericError("create comment", err)
 	}
-	
+
 	if !response.CommentCreate.Success {
 		return nil, guidance.OperationFailedError("Create comment", "comment", []string{
 			"Verify the issue ID exists using linear_get_issue",
@@ -89,7 +89,7 @@ linear_create_comment(issue.id, "This is my comment")`)
 			"Ensure the issue is not locked or archived",
 		})
 	}
-	
+
 	return &response.CommentCreate.Comment, nil
 }
 
@@ -190,7 +190,7 @@ func (cc *Client) CreateCommentReply(issueID, parentID, body string) (*core.Comm
 	if body == "" {
 		return nil, &core.ValidationError{Field: "body", Message: "body cannot be empty"}
 	}
-	
+
 	const mutation = `
 		mutation CreateCommentReply($issueId: String!, $parentId: String!, $body: String!) {
 			commentCreate(
@@ -222,29 +222,29 @@ func (cc *Client) CreateCommentReply(issueID, parentID, body string) (*core.Comm
 			}
 		}
 	`
-	
+
 	variables := map[string]interface{}{
 		"issueId":  issueID,
 		"parentId": parentID,
 		"body":     body,
 	}
-	
+
 	var response struct {
 		CommentCreate struct {
-			Success bool    `json:"success"`
+			Success bool         `json:"success"`
 			Comment core.Comment `json:"comment"`
 		} `json:"commentCreate"`
 	}
-	
+
 	err := cc.base.ExecuteRequest(mutation, variables, &response)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create comment reply: %w", err)
 	}
-	
+
 	if !response.CommentCreate.Success {
 		return nil, fmt.Errorf("comment reply creation was not successful")
 	}
-	
+
 	return &response.CommentCreate.Comment, nil
 }
 
@@ -257,7 +257,7 @@ func (cc *Client) GetCommentWithReplies(commentID string) (*core.CommentWithRepl
 	if commentID == "" {
 		return nil, &core.ValidationError{Field: "commentID", Message: "commentID cannot be empty"}
 	}
-	
+
 	const query = `
 		query GetCommentWithReplies($id: String!) {
 			comment(id: $id) {
@@ -294,11 +294,11 @@ func (cc *Client) GetCommentWithReplies(commentID string) (*core.CommentWithRepl
 			}
 		}
 	`
-	
+
 	variables := map[string]interface{}{
 		"id": commentID,
 	}
-	
+
 	var response struct {
 		Comment struct {
 			ID        string `json:"id"`
@@ -333,7 +333,7 @@ func (cc *Client) GetCommentWithReplies(commentID string) (*core.CommentWithRepl
 			} `json:"children"`
 		} `json:"comment"`
 	}
-	
+
 	err := cc.base.ExecuteRequest(query, variables, &response)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get comment with replies: %w", err)
@@ -369,7 +369,7 @@ func (cc *Client) GetCommentWithReplies(commentID string) (*core.CommentWithRepl
 		},
 		Replies: make([]core.Comment, len(response.Comment.Children.Nodes)),
 	}
-	
+
 	// Map replies
 	// Why: Convert the nested reply structure into our Comment model
 	// for consistent representation across the API.
@@ -392,8 +392,97 @@ func (cc *Client) GetCommentWithReplies(commentID string) (*core.CommentWithRepl
 			},
 		}
 	}
-	
+
 	return result, nil
+}
+
+// ResolveCommentThread resolves a comment thread.
+// Why: Inline/threaded discussions often need explicit resolution once addressed.
+func (cc *Client) ResolveCommentThread(commentID string) error {
+	if commentID == "" {
+		return &core.ValidationError{Field: "commentID", Message: "commentID cannot be empty"}
+	}
+
+	const mutation = `
+		mutation ResolveCommentThread($id: String!) {
+			commentResolve(id: $id) {
+				success
+				comment {
+					id
+					resolvedAt
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{
+		"id": commentID,
+	}
+
+	var response struct {
+		CommentResolve struct {
+			Success bool `json:"success"`
+			Comment struct {
+				ID         string `json:"id"`
+				ResolvedAt string `json:"resolvedAt"`
+			} `json:"comment"`
+		} `json:"commentResolve"`
+	}
+
+	err := cc.base.ExecuteRequest(mutation, variables, &response)
+	if err != nil {
+		return fmt.Errorf("failed to resolve comment thread: %w", err)
+	}
+
+	if !response.CommentResolve.Success {
+		return fmt.Errorf("comment thread resolution was not successful")
+	}
+
+	return nil
+}
+
+// UnresolveCommentThread reopens a previously resolved comment thread.
+func (cc *Client) UnresolveCommentThread(commentID string) error {
+	if commentID == "" {
+		return &core.ValidationError{Field: "commentID", Message: "commentID cannot be empty"}
+	}
+
+	const mutation = `
+		mutation UnresolveCommentThread($id: String!) {
+			commentUnresolve(id: $id) {
+				success
+				comment {
+					id
+					resolvedAt
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{
+		"id": commentID,
+	}
+
+	var response struct {
+		CommentUnresolve struct {
+			Success bool `json:"success"`
+			Comment struct {
+				ID         string  `json:"id"`
+				ResolvedAt *string `json:"resolvedAt"`
+			} `json:"comment"`
+		} `json:"commentUnresolve"`
+	}
+
+	err := cc.base.ExecuteRequest(mutation, variables, &response)
+	if err != nil {
+		return fmt.Errorf("failed to unresolve comment thread: %w", err)
+	}
+
+	if !response.CommentUnresolve.Success {
+		return fmt.Errorf("comment thread unresolve was not successful")
+	}
+
+	return nil
 }
 
 // AddReaction adds an emoji reaction to an issue or comment
@@ -412,7 +501,7 @@ func (cc *Client) AddReaction(targetID, emoji string) error {
 	if !validation.IsValidEmoji(emoji) {
 		return &core.ValidationError{Field: "emoji", Value: emoji, Reason: "must be a single valid emoji"}
 	}
-	
+
 	const mutation = `
 		mutation AddReaction($id: String!, $emoji: String!) {
 			reactionCreate(
@@ -433,15 +522,15 @@ func (cc *Client) AddReaction(targetID, emoji string) error {
 			}
 		}
 	`
-	
+
 	variables := map[string]interface{}{
 		"id":    targetID,
 		"emoji": emoji,
 	}
-	
+
 	var response struct {
 		ReactionCreate struct {
-			Success bool `json:"success"`
+			Success  bool `json:"success"`
 			Reaction struct {
 				ID    string `json:"id"`
 				Emoji string `json:"emoji"`
@@ -452,15 +541,15 @@ func (cc *Client) AddReaction(targetID, emoji string) error {
 			} `json:"reaction"`
 		} `json:"reactionCreate"`
 	}
-	
+
 	err := cc.base.ExecuteRequest(mutation, variables, &response)
 	if err != nil {
 		return fmt.Errorf("failed to add reaction: %w", err)
 	}
-	
+
 	if !response.ReactionCreate.Success {
 		return fmt.Errorf("reaction creation was not successful")
 	}
-	
+
 	return nil
 }

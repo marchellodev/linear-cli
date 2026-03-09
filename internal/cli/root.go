@@ -80,8 +80,9 @@ Issues (alias: i):
   i blocking <ID>              Show what this blocks
 
   Issue flags: -t team, -d description, -s state, -p priority (0-4),
-               -e estimate, -l labels, -c cycle, -P project, -a assignee,
-               --parent, --blocked-by, --depends-on, --attach, --due, --title
+               -e estimate, -l labels, --remove-labels, -c cycle, -P project,
+               -a assignee, --parent, --blocked-by, --depends-on, --attach,
+               --due, --title
   Comment/Reply flags: -b body, --attach <file> (inline image embed)
 
 Projects (alias: p):

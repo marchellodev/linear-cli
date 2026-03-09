@@ -5,9 +5,9 @@ import (
 	"sort"
 
 	"github.com/joa23/linear-cli/internal/format"
+	"github.com/joa23/linear-cli/internal/linear/core"
 	"github.com/joa23/linear-cli/internal/linear/identifiers"
 	paginationutil "github.com/joa23/linear-cli/internal/linear/pagination"
-	"github.com/joa23/linear-cli/internal/linear/core"
 )
 
 // IssueService handles issue-related operations
@@ -26,19 +26,19 @@ func NewIssueService(client IssueClientOperations, formatter *format.Formatter) 
 
 // SearchFilters represents filters for searching issues
 type SearchFilters struct {
-	TeamID     string
-	ProjectID  string
-	AssigneeID string
-	CycleID    string
-	StateIDs   []string
-	LabelIDs   []string
+	TeamID          string
+	ProjectID       string
+	AssigneeID      string
+	CycleID         string
+	StateIDs        []string
+	LabelIDs        []string
 	ExcludeLabelIDs []string
-	Priority   *int
-	SearchTerm string
-	OrderBy    string
-	Limit      int
-	After      string
-	Format     format.Format
+	Priority        *int
+	SearchTerm      string
+	OrderBy         string
+	Limit           int
+	After           string
+	Format          format.Format
 }
 
 // Get retrieves a single issue by identifier (e.g., "CEN-123")
@@ -549,20 +549,21 @@ func (s *IssueService) Create(input *CreateIssueInput) (string, error) {
 
 // UpdateIssueInput represents input for updating an issue
 type UpdateIssueInput struct {
-	Title       *string
-	Description *string
-	StateID     *string
-	AssigneeID  *string
-	ProjectID   *string
-	ParentID    *string
-	TeamID      *string
-	CycleID     *string
-	Priority    *int
-	Estimate    *float64
-	DueDate     *string
-	LabelIDs    []string
-	DependsOn   []string // Issue identifiers this issue depends on (stored in metadata)
-	BlockedBy   []string // Issue identifiers that block this issue (stored in metadata)
+	Title          *string
+	Description    *string
+	StateID        *string
+	AssigneeID     *string
+	ProjectID      *string
+	ParentID       *string
+	TeamID         *string
+	CycleID        *string
+	Priority       *int
+	Estimate       *float64
+	DueDate        *string
+	LabelIDs       []string
+	RemoveLabelIDs []string
+	DependsOn      []string // Issue identifiers this issue depends on (stored in metadata)
+	BlockedBy      []string // Issue identifiers that block this issue (stored in metadata)
 }
 
 // Update updates an existing issue
@@ -679,7 +680,7 @@ func (s *IssueService) Update(identifier string, input *UpdateIssueInput) (strin
 		}
 		linearInput.CycleID = &cycleID
 	}
-	if len(input.LabelIDs) > 0 {
+	if len(input.LabelIDs) > 0 || len(input.RemoveLabelIDs) > 0 {
 		// Resolve team ID for label resolution
 		var teamIDForLabels string
 		var err error
@@ -701,16 +702,45 @@ func (s *IssueService) Update(identifier string, input *UpdateIssueInput) (strin
 			}
 		}
 
-		// Resolve label names to IDs
-		resolvedLabelIDs := make([]string, 0, len(input.LabelIDs))
-		for _, labelName := range input.LabelIDs {
-			labelID, err := s.client.ResolveLabelIdentifier(labelName, teamIDForLabels)
-			if err != nil {
-				return "", fmt.Errorf("failed to resolve label '%s': %w", labelName, err)
-			}
-			resolvedLabelIDs = append(resolvedLabelIDs, labelID)
+		if len(input.LabelIDs) > 0 && len(input.RemoveLabelIDs) > 0 {
+			return "", fmt.Errorf("cannot use both label replacement and label removal in the same update; use either --labels or --remove-labels")
 		}
-		linearInput.LabelIDs = resolvedLabelIDs
+
+		if len(input.LabelIDs) > 0 {
+			// Resolve label names to IDs
+			resolvedLabelIDs := make([]string, 0, len(input.LabelIDs))
+			for _, labelName := range input.LabelIDs {
+				labelID, err := s.client.ResolveLabelIdentifier(labelName, teamIDForLabels)
+				if err != nil {
+					return "", fmt.Errorf("failed to resolve label '%s': %w", labelName, err)
+				}
+				resolvedLabelIDs = append(resolvedLabelIDs, labelID)
+			}
+			linearInput.LabelIDs = &resolvedLabelIDs
+		}
+
+		if len(input.RemoveLabelIDs) > 0 {
+			removeSet := make(map[string]struct{}, len(input.RemoveLabelIDs))
+			for _, labelName := range input.RemoveLabelIDs {
+				labelID, err := s.client.ResolveLabelIdentifier(labelName, teamIDForLabels)
+				if err != nil {
+					return "", fmt.Errorf("failed to resolve label '%s': %w", labelName, err)
+				}
+				removeSet[labelID] = struct{}{}
+			}
+
+			remainingLabelIDs := make([]string, 0)
+			if issue.Labels != nil {
+				remainingLabelIDs = make([]string, 0, len(issue.Labels.Nodes))
+				for _, label := range issue.Labels.Nodes {
+					if _, shouldRemove := removeSet[label.ID]; shouldRemove {
+						continue
+					}
+					remainingLabelIDs = append(remainingLabelIDs, label.ID)
+				}
+			}
+			linearInput.LabelIDs = &remainingLabelIDs
+		}
 	}
 
 	// Perform update only if there are GraphQL fields to update
@@ -787,6 +817,16 @@ func (s *IssueService) ReplyToComment(issueIdentifier, parentCommentID, body str
 	return comment, nil
 }
 
+// ResolveCommentThread resolves a comment thread by comment ID.
+func (s *IssueService) ResolveCommentThread(commentID string) error {
+	return s.client.CommentClient().ResolveCommentThread(commentID)
+}
+
+// UnresolveCommentThread reopens a resolved comment thread by comment ID.
+func (s *IssueService) UnresolveCommentThread(commentID string) error {
+	return s.client.CommentClient().UnresolveCommentThread(commentID)
+}
+
 // AddReaction adds a reaction to an issue or comment
 func (s *IssueService) AddReaction(targetID, emoji string) error {
 	return s.client.CommentClient().AddReaction(targetID, emoji)
@@ -816,7 +856,7 @@ func hasServiceFieldsToUpdate(input core.UpdateIssueInput) bool {
 		input.ParentID != nil ||
 		input.TeamID != nil ||
 		input.CycleID != nil ||
-		len(input.LabelIDs) > 0
+		input.LabelIDs != nil
 }
 
 // resolveStateID resolves a state name to a valid state ID

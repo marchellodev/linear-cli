@@ -1712,7 +1712,7 @@ func hasFieldsToUpdate(input core.UpdateIssueInput) bool {
 		input.ParentID != nil ||
 		input.TeamID != nil ||
 		input.CycleID != nil ||
-		len(input.LabelIDs) > 0
+		input.LabelIDs != nil
 }
 
 // buildUpdateInput builds the GraphQL input object from UpdateIssueInput
@@ -1746,8 +1746,8 @@ func buildUpdateInput(input core.UpdateIssueInput) map[string]interface{} {
 	if input.TeamID != nil {
 		updateInput["teamId"] = *input.TeamID
 	}
-	if len(input.LabelIDs) > 0 {
-		updateInput["labelIds"] = input.LabelIDs
+	if input.LabelIDs != nil {
+		updateInput["labelIds"] = *input.LabelIDs
 	}
 	if input.CycleID != nil {
 		updateInput["cycleId"] = *input.CycleID

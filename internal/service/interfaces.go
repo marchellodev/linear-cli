@@ -18,6 +18,8 @@ type IssueServiceInterface interface {
 	GetComments(identifier string) (string, error)
 	AddComment(identifier, body string) (string, error)
 	ReplyToComment(issueIdentifier, parentCommentID, body string) (*core.Comment, error)
+	ResolveCommentThread(commentID string) error
+	UnresolveCommentThread(commentID string) error
 	AddReaction(targetID, emoji string) error
 	GetIssueID(identifier string) (string, error)
 }

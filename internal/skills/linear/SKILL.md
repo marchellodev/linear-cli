@@ -52,6 +52,8 @@ linear i get <ID>                        # Get details (CEN-123)
 linear i create <title> [flags]          # Create issue
 linear i update <ID> [flags]             # Update issue
 linear i comment <ID> -b "text"          # Add comment
+linear i resolve <comment-id>            # Resolve comment thread
+linear i unresolve <comment-id>          # Reopen comment thread
 linear i react <ID> 👍                   # Add reaction
 
 # Projects (alias: p)
@@ -253,6 +255,10 @@ cat findings.md | linear i comment CEN-123 -b -
 
 # Reply to comment with piped content
 cat response.md | linear i reply CEN-123 comment-id -b -
+
+# Resolve / reopen a comment thread
+linear i resolve comment-id
+linear i unresolve comment-id
 ```
 
 **Common Patterns:**
@@ -379,7 +385,8 @@ linear i list --creator me --team CEN
 - `-c, --cycle <number>` - Cycle number
 - `-P, --project <name>` - Project name
 - `-e, --estimate <points>` - Story points
-- `-l, --labels <list>` - Comma-separated
+- `-l, --labels <list>` - Comma-separated label replacement
+- `--remove-labels <list>` - Remove specific labels from an issue
 - `-d, --description <text|->` - Description (- for stdin)
 - `--parent <ID>` - Parent issue
 - `--depends-on <IDs>` - Comma-separated dependencies

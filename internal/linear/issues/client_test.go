@@ -81,6 +81,9 @@ func TestBuildUpdateInput_DelegateID(t *testing.T) {
 }
 
 func TestHasFieldsToUpdate_DelegateID(t *testing.T) {
+	emptyLabels := []string{}
+	labels := []string{"label-1"}
+
 	tests := []struct {
 		name     string
 		input    core.UpdateIssueInput
@@ -112,6 +115,20 @@ func TestHasFieldsToUpdate_DelegateID(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name: "empty labels still count as update",
+			input: core.UpdateIssueInput{
+				LabelIDs: &emptyLabels,
+			},
+			expected: true,
+		},
+		{
+			name: "labels set",
+			input: core.UpdateIssueInput{
+				LabelIDs: &labels,
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -121,6 +138,27 @@ func TestHasFieldsToUpdate_DelegateID(t *testing.T) {
 				t.Errorf("hasFieldsToUpdate() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestBuildUpdateInput_EmptyLabelsIncluded(t *testing.T) {
+	emptyLabels := []string{}
+	result := buildUpdateInput(core.UpdateIssueInput{LabelIDs: &emptyLabels})
+
+	value, ok := result["labelIds"]
+	if !ok {
+		t.Fatal("expected labelIds to be present")
+	}
+
+	labels, ok := value.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", value)
+	}
+	if labels == nil {
+		t.Fatal("expected empty slice, got nil")
+	}
+	if len(labels) != 0 {
+		t.Fatalf("expected 0 labels, got %d", len(labels))
 	}
 }
 
